@@ -414,10 +414,10 @@ export default function SahiDawaHome() {
 
                     {/* ── Health Assistant CTA Banner ── */}
                     <div
-                        className="group relative mt-4 transform-gpu overflow-hidden rounded-3xl transition-all duration-300 select-none hover:scale-[1.01] hover:shadow-xl hover:shadow-purple-500/10"
+                        className="group relative mt-4 transform-gpu overflow-hidden rounded-3xl transition-all duration-300 select-none hover:scale-[1.01] hover:shadow-xl hover:shadow-emerald-500/10"
                         style={{
                             background:
-                                "linear-gradient(135deg, #6d5ce7 0%, #7c3aed 50%, #5b21b6 100%)",
+                                "linear-gradient(135deg, #059669 0%, #10b981 50%, #14b8a6 100%)",
                         }}
                     >
                         {/* Subtle inner highlight */}
@@ -439,7 +439,7 @@ export default function SahiDawaHome() {
                                             {tHome("ai_chat")}
                                         </span>
                                     </div>
-                                    <p className="text-sm leading-relaxed font-medium text-purple-100 sm:text-base">
+                                    <p className="text-sm leading-relaxed font-medium text-emerald-100 sm:text-base">
                                         {tHome("ai_health_assistant_description")}
                                     </p>
                                 </div>
@@ -448,7 +448,7 @@ export default function SahiDawaHome() {
                             {/* Chat Now button — white outlined */}
                             <button
                                 onClick={() => handleNavigation("health")}
-                                className="group/btn flex w-full shrink-0 items-center justify-center gap-2.5 rounded-xl border-2 border-white/80 bg-white/15 px-7 py-3 text-base font-bold text-white backdrop-blur-sm transition-all duration-300 hover:bg-white hover:text-purple-700 sm:w-auto"
+                                className="group/btn flex w-full shrink-0 items-center justify-center gap-2.5 rounded-xl border-2 border-white/80 bg-white/15 px-7 py-3 text-base font-bold text-white backdrop-blur-sm transition-all duration-300 hover:bg-white hover:text-emerald-700 sm:w-auto"
                             >
                                 <MessageCircle size={18} />
                                 {tHome("chat_now")}
