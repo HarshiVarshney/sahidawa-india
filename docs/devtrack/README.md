@@ -823,3 +823,4 @@
 | [#1705](https://github.com/RatLoopz/sahidawa-india/pull/1705) | 2026-06-12 | Frontend | 5 | @Yogender-verma | [View Doc](devtrack/2026-06/PR-1705-feat-login-improve-password-input-with-visibility-.md) |
 | [#1756](https://github.com/RatLoopz/sahidawa-india/pull/1756) | 2026-06-12 | DevOps | 8 | @dipexplorer | [View Doc](devtrack/2026-06/PR-1756-feat-workflow-implement-strict-creator-only-assign.md) |
 | [#1743](https://github.com/RatLoopz/sahidawa-india/pull/1743) | 2026-06-12 | Frontend | 5 | @Ayush2496 | [View Doc](devtrack/2026-06/PR-1743-feat-display-badge-for-low-confidence-limit-thresh.md) |
+| [#1740](https://github.com/RatLoopz/sahidawa-india/pull/1740) | 2026-06-12 | Backend | 14 | @shauryavardhan1307 | [View Doc](devtrack/2026-06/PR-1740-feat-web-add-medicine-information-and-side-effects.md) |
