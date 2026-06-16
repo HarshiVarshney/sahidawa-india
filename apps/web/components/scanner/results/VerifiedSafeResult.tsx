@@ -86,21 +86,13 @@ export function VerifiedSafeResult({
                     <ExpiryBadge expiryDate={formatExpiryForBadge(medicine.expiry_date)} />
                 </div>
 
-                <div className="grid w-full grid-cols-2 gap-3">
+                <div className="w-full">
                     <div className="rounded-2xl border border-(--color-border-muted) bg-(--color-surface-muted) p-3">
                         <span className="block text-[10px] font-bold tracking-wider text-(--color-text-muted) uppercase">
                             Manufacturer
                         </span>
                         <span className="text-sm font-bold text-(--color-text-primary)">
                             {medicine.manufacturer}
-                        </span>
-                    </div>
-                    <div className="rounded-2xl border border-(--color-border-muted) bg-(--color-surface-muted) p-3">
-                        <span className="block text-[10px] font-bold tracking-wider text-(--color-text-muted) uppercase">
-                            Generic Name
-                        </span>
-                        <span className="text-sm font-bold text-(--color-text-primary)">
-                            {medicine.generic_name}
                         </span>
                     </div>
                 </div>
