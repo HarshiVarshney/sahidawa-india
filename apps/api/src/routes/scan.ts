@@ -10,8 +10,7 @@ import { validateUploadSize } from "../middleware/uploadSizeValidator";
 import { uploadRateLimiter } from "../middleware/uploadRateLimit";
 import { scanQueryLimiter } from "../middleware/rateLimit";
 
-import { escapePostgrest } from "../utils/db";
-import { escapeIlike } from "../utils/db";
+import { escapeIlike, escapePostgrest } from "../utils/db";
 
 const router = Router();
 
@@ -652,6 +651,30 @@ router.post("/match", scanQueryLimiter, async (req: Request, res: Response) => {
         }
 
         if (!data || data.length === 0) {
+            const words = query
+                .trim()
+                .split(/\s+/)
+                .filter((w: string) => w.length > 2);
+            if (words.length > 1) {
+                let fallbackQuery = supabase.from("medicines").select("brand_name, generic_name");
+
+                for (const word of words) {
+                    fallbackQuery = fallbackQuery.or(
+                        `brand_name.ilike."%${escapePostgrest(word)}%",generic_name.ilike."%${escapePostgrest(word)}%"`
+                    );
+                }
+
+                const { data: fallback } = await (fallbackQuery as any).limit(3);
+                if (fallback && fallback.length > 0) {
+                    res.status(200).json(
+                        fallback.map((m: { brand_name: string | null; generic_name: string }) => ({
+                            name: m.brand_name || m.generic_name,
+                            score: 60,
+                        }))
+                    );
+                    return;
+                }
+            }
             res.status(200).json([]);
             return;
         }
