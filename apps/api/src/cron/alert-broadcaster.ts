@@ -3,11 +3,15 @@ import { smsService } from "../services/sms-service";
 import { whatsappService } from "../services/whatsapp-service";
 import logger from "../utils/logger";
 import { NotificationSubscriber, NotificationAlertData } from "../types/notification.types";
+import { redisClient } from "../utils/redis";
 
 let intervalId: NodeJS.Timeout | null = null;
 const CHECK_INTERVAL_MS = process.env.NODE_ENV === "test" ? 1000 : 30000; // 30 seconds
 const PAGE_SIZE = 1000;
 const NOTIFICATION_CHUNK_SIZE = 50;
+const LOCK_KEY = "alert-broadcaster:lock";
+const LOCK_TTL_MS = 25_000; // slightly under the 30-second interval
+const LOCK_VALUE = `${process.env.HOSTNAME ?? "api"}:${process.pid}`;
 
 export function getLocalizedMessage(
     type: "counterfeit" | "recall" | "expiry",
@@ -76,12 +80,94 @@ export function getLocalizedMessage(
     return { title, body };
 }
 
+async function acquireLock(): Promise<boolean> {
+    if (!redisClient.isOpen) {
+        // Redis unavailable — fall back to running (risk duplicate sends is preferable to silent drop)
+        logger.warn("Redis not connected; skipping distributed lock for alert broadcaster.");
+        return true;
+    }
+    try {
+        const result = await redisClient.set(LOCK_KEY, LOCK_VALUE, {
+            NX: true,
+            PX: LOCK_TTL_MS,
+        });
+        return result === "OK";
+    } catch (err) {
+        logger.error({ message: "Failed to acquire broadcaster lock", error: err });
+        return false;
+    }
+}
+
+async function releaseLock(): Promise<void> {
+    if (!redisClient.isOpen) return;
+    try {
+        // Only release if this process still owns the lock (Lua script for atomicity)
+        const script = `
+            if redis.call("get", KEYS[1]) == ARGV[1] then
+                return redis.call("del", KEYS[1])
+            else
+                return 0
+            end
+        `;
+        await redisClient.eval(script, { keys: [LOCK_KEY], arguments: [LOCK_VALUE] });
+    } catch (err) {
+        logger.error({ message: "Failed to release broadcaster lock", error: err });
+    }
+}
+
 async function sendNotificationToSubscriber(
     sub: NotificationSubscriber,
     type: "counterfeit" | "recall" | "expiry",
     data: NotificationAlertData
 ): Promise<void> {
     const { title, body } = getLocalizedMessage(type, data, sub.language);
+    const fullMessage = `${title}\n\n${body}`;
+
+    const sendPromises: Promise<boolean>[] = [];
+    if (sub.channels.includes("sms")) {
+        sendPromises.push(smsService.send(sub.phone, fullMessage, sub.language));
+    }
+    if (sub.channels.includes("whatsapp")) {
+        sendPromises.push(whatsappService.send(sub.phone, fullMessage, sub.language));
+    }
+
+    await Promise.all(sendPromises);
+}
+
+interface ExpiringBatchSummary {
+    medicineName: string;
+    batchNumber: string;
+    expiryDate: string;
+}
+
+/**
+ * Builds a single consolidated expiry message covering every expiring batch,
+ * instead of one notification per batch. Reuses the existing per-batch
+ * "expiry" localized template for each line so translations stay in one
+ * place, then joins the lines under one localized header.
+ */
+function buildConsolidatedExpiryMessage(
+    batchSummaries: ExpiringBatchSummary[],
+    language: string
+): { title: string; body: string } {
+    const lines = batchSummaries.map((b) => {
+        const { body } = getLocalizedMessage(
+            "expiry",
+            { medicineName: b.medicineName, batchNumber: b.batchNumber, expiryDate: b.expiryDate },
+            language
+        );
+        return `• ${body}`;
+    });
+
+    const { title } = getLocalizedMessage("expiry", {} as NotificationAlertData, language);
+    return { title, body: lines.join("\n") };
+}
+
+async function sendConsolidatedExpiryNotification(
+    sub: NotificationSubscriber,
+    batchSummaries: ExpiringBatchSummary[]
+): Promise<void> {
+    const { title, body } = buildConsolidatedExpiryMessage(batchSummaries, sub.language);
     const fullMessage = `${title}\n\n${body}`;
 
     const sendPromises: Promise<boolean>[] = [];
@@ -115,6 +201,21 @@ export async function broadcastDistrictAlerts(): Promise<void> {
 
         for (const alert of alerts) {
             logger.info(`Broadcasting counterfeit alert for district: ${alert.district}`);
+
+            const { error: markError } = await supabase
+                .from("district_alerts")
+                .update({ broadcasted: true })
+                .eq("id", alert.id);
+
+            if (markError) {
+                logger.error({
+                    message:
+                        "Failed to mark district alert as broadcasted, skipping send to avoid duplicate delivery on next tick",
+                    error: markError,
+                    alertId: alert.id,
+                });
+                continue;
+            }
 
             let from = 0;
             let to = PAGE_SIZE - 1;
@@ -242,13 +343,16 @@ export async function broadcastDrugAlerts(): Promise<void> {
 
 export async function broadcastExpiryAlerts(): Promise<void> {
     try {
-        const thirtyDaysFromNow = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+        const now = new Date();
+        const todayStr = now.toISOString().split("T")[0];
+        const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
             .toISOString()
             .split("T")[0];
 
         const { data: expiringBatches, error: batchesError } = await supabase
             .from("batches")
             .select("*, medicine:medicines(brand_name)")
+            .gte("expiry_date", todayStr)
             .lte("expiry_date", thirtyDaysFromNow)
             .eq("expiry_broadcasted", false);
 
@@ -260,6 +364,32 @@ export async function broadcastExpiryAlerts(): Promise<void> {
         if (!expiringBatches || expiringBatches.length === 0) return;
 
         logger.info(`Broadcasting medicine expiry warnings for ${expiringBatches.length} batches`);
+
+        const batchSummaries: ExpiringBatchSummary[] = [];
+
+        for (const batch of expiringBatches) {
+            const { error: markError } = await supabase
+                .from("batches")
+                .update({ expiry_broadcasted: true })
+                .eq("id", batch.id);
+
+            if (markError) {
+                logger.error({
+                    message: "Failed to mark batch as expiry_broadcasted, skipping for this tick",
+                    error: markError,
+                    batchId: batch.id,
+                });
+                continue;
+            }
+
+            batchSummaries.push({
+                medicineName: batch.medicine?.brand_name || "Unknown Medicine",
+                batchNumber: batch.batch_number,
+                expiryDate: batch.expiry_date,
+            });
+        }
+
+        if (batchSummaries.length === 0) return;
 
         let from = 0;
         let to = PAGE_SIZE - 1;
@@ -286,21 +416,9 @@ export async function broadcastExpiryAlerts(): Promise<void> {
 
             for (let i = 0; i < subscribers.length; i += NOTIFICATION_CHUNK_SIZE) {
                 const chunk = subscribers.slice(i, i + NOTIFICATION_CHUNK_SIZE);
-                const notificationPromises: Promise<any>[] = [];
-
-                for (const sub of chunk) {
-                    for (const batch of expiringBatches) {
-                        const medicineName = batch.medicine?.brand_name || "Unknown Medicine";
-                        notificationPromises.push(
-                            sendNotificationToSubscriber(sub, "expiry", {
-                                medicineName,
-                                batchNumber: batch.batch_number,
-                                expiryDate: batch.expiry_date,
-                            })
-                        );
-                    }
-                }
-
+                const notificationPromises = chunk.map((sub) =>
+                    sendConsolidatedExpiryNotification(sub, batchSummaries)
+                );
                 await Promise.allSettled(notificationPromises);
             }
 
@@ -310,10 +428,6 @@ export async function broadcastExpiryAlerts(): Promise<void> {
                 from += PAGE_SIZE;
                 to += PAGE_SIZE;
             }
-        }
-
-        for (const batch of expiringBatches) {
-            await supabase.from("batches").update({ expiry_broadcasted: true }).eq("id", batch.id);
         }
     } catch (err) {
         logger.error({ message: "Error in broadcastExpiryAlerts", error: err });
@@ -325,9 +439,20 @@ export async function checkAndBroadcastAll(): Promise<void> {
         logger.debug("Supabase database is offline. Skipping cron alert broadcasting.");
         return;
     }
-    await broadcastDistrictAlerts();
-    await broadcastDrugAlerts();
-    await broadcastExpiryAlerts();
+
+    const acquired = await acquireLock();
+    if (!acquired) {
+        logger.info("Alert broadcaster lock held by another instance — skipping this tick.");
+        return;
+    }
+
+    try {
+        await broadcastDistrictAlerts();
+        await broadcastDrugAlerts();
+        await broadcastExpiryAlerts();
+    } finally {
+        await releaseLock();
+    }
 }
 
 export function startAlertBroadcaster(): void {

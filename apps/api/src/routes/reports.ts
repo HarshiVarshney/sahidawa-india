@@ -1,4 +1,4 @@
-import { Router, Response } from "express";
+import { Router, Response, NextFunction } from "express";
 import { z } from "zod";
 import { supabase } from "../db/client";
 import { AuthenticatedRequest, optionalAuth, requireAuth, requireRole } from "../middleware/auth";
@@ -50,6 +50,7 @@ const createReportSchema = z.object({
     pharmacyName: z.string().min(2),
     address: z.string().min(5),
     city: z.string().min(2),
+    district: z.string().min(2).optional(),
     state: z.string().min(2),
     pincode: z.string().regex(/^\d{6}$/),
     latitude: z
@@ -78,7 +79,7 @@ reportsRouter.post(
     "/",
     reportLimiter,
     optionalAuth,
-    async (req: AuthenticatedRequest, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
         const parsed = createReportSchema.safeParse(req.body);
 
         if (!parsed.success) {
@@ -90,12 +91,10 @@ reportsRouter.post(
         }
 
         const data = parsed.data;
+        const district = data.district ?? data.city;
 
         try {
-            const rawIp =
-                req.headers["x-forwarded-for"]?.toString().split(",")[0]?.trim() ||
-                req.socket.remoteAddress;
-            const ipAddress = anonymizeIp(rawIp);
+            const ipAddress = anonymizeIp(req.ip);
             const validationPayload = {
                 medicineName: data.medicineName,
                 manufacturer: data.manufacturer,
@@ -105,7 +104,7 @@ reportsRouter.post(
                 city: data.city,
                 state: data.state,
                 pincode: data.pincode,
-                district: data.city,
+                district,
             };
 
             const validation = await validateReport(
@@ -127,7 +126,7 @@ reportsRouter.post(
                     city: data.city,
                     state: data.state,
                     pincode: data.pincode,
-                    district: data.city,
+                    district,
                     report_location: buildReportLocation(data.latitude, data.longitude),
                     reporter_id: req.user?.id ?? null,
                     ip_address: ipAddress,
@@ -160,12 +159,7 @@ reportsRouter.post(
 
             res.status(201).json(response);
         } catch (err) {
-            console.error("Unexpected error in POST /api/reports:", err);
-            res.status(500).json({
-                error: "An unexpected error occurred",
-                details: err instanceof Error ? err.message : String(err),
-                stack: err instanceof Error ? err.stack : undefined,
-            });
+            next(err);
         }
     }
 );
@@ -275,6 +269,7 @@ reportsRouter.patch(
                             district: data.district,
                             medicine_name: data.reported_brand_name,
                             alert_level: alertLevel,
+                            broadcasted: false,
                         },
                         { onConflict: "district" }
                     );
