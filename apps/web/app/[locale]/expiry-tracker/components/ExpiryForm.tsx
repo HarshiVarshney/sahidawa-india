@@ -49,7 +49,6 @@ export function ExpiryForm({
     medicinesCount,
     fileInputRef,
     notificationPermission,
-    isSubmitting = false,
     onNameChange,
     onExpiryDateChange,
     onBatchNumberChange,
