@@ -41,7 +41,14 @@
         "find_pharmacy": "Find Pharmacy",
         "report_subtitle": "Report suspicious medicine",
         "real_time": "REAL TIME",
-        "alerts_description": "Stay updated with the latest medicine safety alerts and recalls."
+        "alerts_description": "Stay updated with the latest medicine safety alerts and recalls.",
+        "scan_section_title": "दवा स्कैन और सत्यापित करें",
+        "scan_section_subtitle": "बारकोड या पैकेज स्कैनिंग का उपयोग करके दवा की प्रामाणिकता सत्यापित करें।",
+        "powerful_capabilities": "शक्तिशाली क्षमताएं",
+        "features_description": "उन सभी तरीकों की खोज करें जिनसे SahiDawa आपकी दवाओं को सत्यापित करने और सुरक्षित रहने में मदद कर सकता है।",
+        "trusted_by_citizens": "नागरिकों द्वारा विश्वसनीय",
+        "voices_title": "सहिदवा समुदाय की आवाज़ें",
+        "voices_description": "दवा सुरक्षा को आसान बनाने के लिए SahiDawa का उपयोग करने वाले परिवार, फार्मासिस्ट, डॉक्टर और योगदानकर्ता।"
     },
     "ChildVaccinationTracker": {
         "childTrackerTitle": "बाल टीकाकरण ट्रैकर",
